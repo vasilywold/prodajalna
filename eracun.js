@@ -294,6 +294,10 @@ streznik.post('/odjava', function(zahteva, odgovor) {
 
 
 
+
+
+var a = "a";
+
 streznik.listen(process.env.PORT, function() {
   console.log("Strežnik pognan!");
 });
