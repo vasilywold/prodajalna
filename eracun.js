@@ -118,6 +118,19 @@ var pesmiIzKosarice = function(zahteva, callback) {
   }
 };
 
+
+var strankaIzID = function(strankaID, metapodatki, callback){
+  pb.all(" SELECT Customer.* FROM Customer \
+           WHERE " + strankaID + " == Customer.CustomerId ",
+          function(napaka, vrstice){
+            if(napaka){
+              callback(metapodatki, false);
+            }else{
+              callback(metapodatki, vrstice);
+            }
+          });
+};
+
 streznik.get('/kosarica', function(zahteva, odgovor) {
   pesmiIzKosarice(zahteva, function(pesmi) {
     if (!pesmi)
@@ -140,8 +153,8 @@ var pesmiIzRacuna = function(racunId, stranka, callback) {
     Track.TrackId IN (SELECT InvoiceLine.TrackId FROM InvoiceLine, Invoice \
     WHERE InvoiceLine.InvoiceId = Invoice.InvoiceId AND Invoice.InvoiceId = " + racunId + ")",
     function(napaka, vrstice) {
-      console.log(vrstice);
       callback(vrstice, stranka);
+
     });
 };
 
@@ -183,21 +196,60 @@ streznik.post('/izpisiRacunBaza', function(zahteva, odgovor) {
   });
 });
 
+
+
+
+var userID = -1;
+
 // Izpis računa v HTML predstavitvi ali izvorni XML obliki
 streznik.get('/izpisiRacun/:oblika', function(zahteva, odgovor) {
+  if(zahteva.session.userID == null)
+    zahteva.session.userID = -1;
   pesmiIzKosarice(zahteva, function(pesmi) {
-    if (!pesmi) {
-      odgovor.sendStatus(500);
-    } else if (pesmi.length == 0) {
-      odgovor.send("<p>V košarici nimate nobene pesmi, \
-        zato računa ni mogoče pripraviti!</p>");
-    } else {
-      console.log(pesmi);
-      odgovor.setHeader('content-type', 'text/xml');
-      odgovor.render('eslog', {
-        vizualiziraj: zahteva.params.oblika == 'html' ? true : false,
-        postavkeRacuna: pesmi
-      });  
+    if(zahteva.session.userID == -1){
+      if (!pesmi) {
+        odgovor.sendStatus(500);
+      } else if (pesmi.length == 0) {
+        odgovor.send("<p>V košarici nimate nobene pesmi, \
+          zato računa ni mogoče pripraviti!</p>");
+      } else {
+        var dummyStranka = [{ "CustomerId" : 1,
+                    "FirstName": "It's",
+                    "LastName": 'The',
+                    "Company": 'Final',
+                    "Address": 'Final 321',
+                    "City": 'Countdown',
+                    "State": '',
+                    "Country": 'England',
+                    "PostalCode": '1984',
+                    "Phone": '9876543210',
+                    "Fax": null,
+                    "Email": 'teletubies@student.uni-lj.si',
+                    "SupportRepId": 3 }] ;
+        odgovor.setHeader('content-type', 'text/xml');
+        odgovor.render('eslog', {
+          vizualiziraj : zahteva.params.oblika == 'html' ? true : false,
+          postavkeRacuna : pesmi,
+          osebniPodatki: dummyStranka
+        });  
+      }
+    }else{
+      strankaIzID(zahteva.session.userID, pesmi, function(pesmi, vrstice) {
+        if(!vrstice){
+          console.log("Faila stavek");
+          odgovor.sendStatus(500);
+        }else if(vrstice.length == 0){
+          console.log("Nobene vrstice");
+          odgovor.sendStatus(500);
+        }else{
+          odgovor.setHeader('content-type', 'text/xml');
+          odgovor.render('eslog', {
+          vizualiziraj: zahteva.params.oblika == 'html' ? true : false,
+          postavkeRacuna : pesmi,
+          osebniPodatki : vrstice
+        });
+        }
+      });
     }
   });
 });
@@ -291,10 +343,10 @@ streznik.get('/prijava', function(zahteva, odgovor) {
 // Prikaz nakupovalne košarice za stranko
 streznik.post('/stranka', function(zahteva, odgovor) {
   var form = new formidable.IncomingForm();
-  //smo prijavljeni
-  zahteva.session.jePrijavljen = true;
   
   form.parse(zahteva, function (napaka1, polja, datoteke) {
+    zahteva.session.userID = polja["seznamStrank"];
+    zahteva.session.jePrijavljen = true;
     odgovor.redirect('/');
   });
 });
@@ -302,9 +354,9 @@ streznik.post('/stranka', function(zahteva, odgovor) {
 // Odjava stranke
 streznik.post('/odjava', function(zahteva, odgovor) {
     zahteva.session.jePrijavljen = false;
-    odgovor.redirect('/prijava') ;
+    zahteva.session.userID = -1;
+    odgovor.redirect('/prijava'); 
 });
-
 
 
 streznik.listen(process.env.PORT, function() {
