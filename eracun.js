@@ -128,7 +128,7 @@ streznik.get('/kosarica', function(zahteva, odgovor) {
 });
 
 // Vrni podrobnosti pesmi na računu
-var pesmiIzRacuna = function(racunId, callback) {
+var pesmiIzRacuna = function(racunId, stranka, callback) {
     pb.all("SELECT Track.TrackId AS stevilkaArtikla, 1 AS kolicina, \
     Track.Name || ' (' || Artist.Name || ')' AS opisArtikla, \
     Track.UnitPrice * " + razmerje_usd_eur + " AS cena, 0 AS popust, \
@@ -141,6 +141,7 @@ var pesmiIzRacuna = function(racunId, callback) {
     WHERE InvoiceLine.InvoiceId = Invoice.InvoiceId AND Invoice.InvoiceId = " + racunId + ")",
     function(napaka, vrstice) {
       console.log(vrstice);
+      callback(vrstice, stranka);
     });
 };
 
@@ -149,13 +150,37 @@ var strankaIzRacuna = function(racunId, callback) {
     pb.all("SELECT Customer.* FROM Customer, Invoice \
             WHERE Customer.CustomerId = Invoice.CustomerId AND Invoice.InvoiceId = " + racunId,
     function(napaka, vrstice) {
-      console.log(vrstice);
+      if(napaka){
+        callback(false);
+      }else
+        callback(vrstice);
     });
 };
 
 // Izpis računa v HTML predstavitvi na podlagi podatkov iz baze
 streznik.post('/izpisiRacunBaza', function(zahteva, odgovor) {
-  odgovor.end();
+  var form = new formidable.IncomingForm();
+  form.parse(zahteva, function (napaka1, polja, datoteke) {
+    //dobili Id racuna
+    var idRacuna=polja["seznamRacunov"];
+    strankaIzRacuna(idRacuna,function(vrstice){
+      if(!vrstice){
+        odgovor.sendStatus(500);
+      }else if(vrstice.length == 0){
+        odgovor.send("<p> Računa s tem IDjem ni bilo mogoče najti </p>");
+      }else{
+        var stranka = vrstice;
+        pesmiIzRacuna(idRacuna, stranka, function(vrstice, stranka){
+          odgovor.setHeader('content-type', 'text/xml');
+          odgovor.render('eslog', {
+            postavkeRacuna: vrstice,
+            vizualiziraj:  true ,
+            osebniPodatki: stranka
+          });
+        });
+      }
+    });
+  });
 });
 
 // Izpis računa v HTML predstavitvi ali izvorni XML obliki
@@ -167,6 +192,7 @@ streznik.get('/izpisiRacun/:oblika', function(zahteva, odgovor) {
       odgovor.send("<p>V košarici nimate nobene pesmi, \
         zato računa ni mogoče pripraviti!</p>");
     } else {
+      console.log(pesmi);
       odgovor.setHeader('content-type', 'text/xml');
       odgovor.render('eslog', {
         vizualiziraj: zahteva.params.oblika == 'html' ? true : false,
